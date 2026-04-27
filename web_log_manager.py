@@ -9,6 +9,7 @@ import mysql.connector
 from mysql.connector import Error
 
 app = Flask(__name__)
+# Flask app object for routing and request handling.
 
 
 def get_connection():
@@ -24,6 +25,8 @@ def get_connection():
 
 def ensure_logs_table(conn):
     """Create logs table if it does not exist."""
+    # conn is the active DB connection passed into this function.
+    # cursor is the object used to run SQL on that connection.
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -41,14 +44,15 @@ def ensure_logs_table(conn):
 
 def fetch_logs():
     """Fetch all rows for table rendering."""
-    conn = None
+    conn = None  # Start with no connection; set it in try.
     try:
-        conn = get_connection()
+        conn = get_connection()  # Open DB connection for this action.
         ensure_logs_table(conn)
-        # dictionary=True returns associative-style rows (like PDO::FETCH_ASSOC).
+        # dictionary=True returns named columns (row["message"]) instead of index positions.
         cursor = conn.cursor(dictionary=True)
+        # ORDER BY id DESC shows newest entries first.
         cursor.execute("SELECT id, message, source, created_at FROM logs ORDER BY id DESC")
-        rows = cursor.fetchall()
+        rows = cursor.fetchall()  # Get all query results into a Python list.
         cursor.close()
         return rows
     finally:
@@ -226,37 +230,41 @@ PAGE_TEMPLATE = """
 
 def render_page(status="", error=""):
     """Render page with table data and optional messages."""
-    rows = fetch_logs()
+    rows = fetch_logs()  # Always read fresh rows before rendering.
+    # render_template_string injects Python values into template placeholders.
     return render_template_string(PAGE_TEMPLATE, rows=rows, status=status, error=error)
 
 
 @app.route("/", methods=["GET"])
+# Route decorator maps GET / to this Python function.
 def index():
+    # request.args reads URL query values, e.g. /?status=Saved
     status = request.args.get("status", "")
     return render_page(status=status)
 
 
 @app.route("/create", methods=["POST"])
+# Route decorator maps POST /create to this Python function.
 def create_record():
     """Create a new log record."""
-    # Flask request.form is comparable to PHP $_POST.
-    message = request.form.get("message", "").strip()
+    # request.form.get(..., "") avoids KeyError if field is missing.
+    message = request.form.get("message", "").strip()  # Read submitted form value and trim spaces.
     if not message:
         return render_page(error="Please enter a message first.")
 
-    conn = None
+    conn = None  # Start with no connection; set it in try.
     try:
         conn = get_connection()
         ensure_logs_table(conn)
-        cursor = conn.cursor()
-        # %s placeholders are prepared-statement style parameter slots.
+        cursor = conn.cursor()  # Cursor sends SQL commands through this DB connection.
+        # %s are SQL placeholders; values are passed separately for safety.
         cursor.execute(
             "INSERT INTO logs (message, source) VALUES (%s, %s)",
             (message, "Web (Flask)"),
         )
-        # commit() persists the write operation.
-        conn.commit()
+        conn.commit()  # Save change permanently.
         cursor.close()
+        # url_for("index", ...) builds the target URL by function name.
         return redirect(url_for("index", status="Record created successfully."))
     except Error as db_error:
         return render_page(error=f"Database Error: {db_error}")
@@ -266,21 +274,22 @@ def create_record():
 
 
 @app.route("/update/<int:record_id>", methods=["POST"])
+# <int:record_id> means Flask reads ID from URL and converts it to int automatically.
 def update_record(record_id):
     """Update one record by ID."""
-    # Similar to reading $_POST['message'] in PHP, but with .get() safety default.
+    # Similar to $_POST but gives a safe default if missing.
     message = request.form.get("message", "").strip()
     if not message:
         return render_page(error="Updated message cannot be empty.")
 
-    conn = None
+    conn = None  # Start with no connection; set it in try.
     try:
         conn = get_connection()
         ensure_logs_table(conn)
         cursor = conn.cursor()
-        # WHERE clause restricts update to one ID.
+        # WHERE id = %s means update only one targeted record.
         cursor.execute("UPDATE logs SET message = %s WHERE id = %s", (message, record_id))
-        conn.commit()
+        conn.commit()  # Save change permanently.
         cursor.close()
         return redirect(url_for("index", status=f"Record ID {record_id} updated."))
     except Error as db_error:
@@ -291,16 +300,18 @@ def update_record(record_id):
 
 
 @app.route("/delete/<int:record_id>", methods=["POST"])
+# <int:record_id> path variable is passed into function as record_id.
 def delete_record(record_id):
     """Delete one record by ID."""
-    conn = None
+    # record_id comes from route path: /delete/<int:record_id>
+    conn = None  # Start with no connection; set it in try.
     try:
         conn = get_connection()
         ensure_logs_table(conn)
         cursor = conn.cursor()
-        # Parameterized DELETE avoids SQL injection.
+        # Single-value tuple uses a trailing comma: (record_id,)
         cursor.execute("DELETE FROM logs WHERE id = %s", (record_id,))
-        conn.commit()
+        conn.commit()  # Save delete permanently.
         cursor.close()
         return redirect(url_for("index", status=f"Record ID {record_id} deleted."))
     except Error as db_error:
@@ -310,5 +321,5 @@ def delete_record(record_id):
             conn.close()
 
 
-if __name__ == "__main__":
-    app.run(debug=True)
+if __name__ == "__main__":  # __name__ == "__main__" means this file is run directly, not imported.
+    app.run(debug=True)  # Start Flask dev server; auto-reloads and shows detailed errors.

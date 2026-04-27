@@ -25,6 +25,8 @@ def get_connection():
 
 def ensure_logs_table(conn):
     """Create logs table if it does not exist."""
+    # conn is the active DB connection passed into this function.
+    # cursor is the object that sends SQL commands through that connection.
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -42,23 +44,25 @@ def ensure_logs_table(conn):
 
 def clear_form():
     """Reset selected record and message input."""
-    selected_id_var.set("")
-    message_entry.delete(0, tk.END)
+    selected_id_var.set("")  # Tkinter StringVar: set displayed value in bound input.
+    message_entry.delete(0, tk.END)  # Tkinter Entry: delete text from index 0 to END.
 
 
 def refresh_table():
     """Load rows from database and redraw the table."""
+    # First clear old UI rows so we repaint from fresh DB data.
     for item in logs_table.get_children():
-        logs_table.delete(item)
+        logs_table.delete(item)  # Treeview API: remove one row by item id.
 
-    conn = None
+    conn = None  # Start with no connection; set it in try.
     try:
-        conn = get_connection()
+        conn = get_connection()  # Open DB connection for this action.
         ensure_logs_table(conn)
-        # dictionary=True behaves like associative array fetch in PHP.
+        # dictionary=True returns named columns (row["message"]) instead of index positions.
         cursor = conn.cursor(dictionary=True)
+        # ORDER BY id DESC shows newest entries first.
         cursor.execute("SELECT id, message, source, created_at FROM logs ORDER BY id DESC")
-        rows = cursor.fetchall()
+        rows = cursor.fetchall()  # Get all query results into a Python list.
         cursor.close()
 
         for row in rows:
@@ -66,7 +70,7 @@ def refresh_table():
                 "",
                 tk.END,
                 values=(row["id"], row["message"], row["source"], row["created_at"]),
-            )
+            )  # Treeview insert: values must match declared column order.
     except Error as db_error:
         messagebox.showerror("Database Error", str(db_error))
     finally:
@@ -76,23 +80,22 @@ def refresh_table():
 
 def create_log():
     """Insert a new row from the message input."""
-    message = message_entry.get().strip()
+    message = message_entry.get().strip()  # Entry.get() reads current text; strip() removes extra spaces.
     if not message:
         messagebox.showwarning("Input Needed", "Please type a message first.")
         return
 
-    conn = None
+    conn = None  # Start with no connection; set it in try.
     try:
         conn = get_connection()
         ensure_logs_table(conn)
-        cursor = conn.cursor()
-        # %s are safe SQL parameter placeholders (prepared statement style).
+        cursor = conn.cursor()  # New cursor for this write operation.
+        # %s are SQL placeholders; values are passed separately for safety.
         cursor.execute(
             "INSERT INTO logs (message, source) VALUES (%s, %s)",
             (message, "Desktop (Tkinter)"),
         )
-        # commit() persists INSERT/UPDATE/DELETE changes.
-        conn.commit()
+        conn.commit()  # Save change permanently.
         cursor.close()
         clear_form()
         refresh_table()
@@ -106,7 +109,7 @@ def create_log():
 
 def update_log():
     """Update the selected row message."""
-    record_id = selected_id_var.get().strip()
+    record_id = selected_id_var.get().strip()  # StringVar.get() reads value from bound "Selected ID" field.
     message = message_entry.get().strip()
 
     if not record_id:
@@ -116,14 +119,15 @@ def update_log():
         messagebox.showwarning("Input Needed", "Please type an updated message.")
         return
 
-    conn = None
+    conn = None  # Start with no connection; set it in try.
     try:
         conn = get_connection()
         ensure_logs_table(conn)
         cursor = conn.cursor()
-        # WHERE id = %s targets only the selected row.
+        # WHERE id = %s means update only one selected record.
         cursor.execute("UPDATE logs SET message = %s WHERE id = %s", (message, int(record_id)))
-        conn.commit()
+        # int(record_id) converts UI text into numeric ID expected by SQL.
+        conn.commit()  # Save change permanently.
         cursor.close()
         clear_form()
         refresh_table()
@@ -137,7 +141,7 @@ def update_log():
 
 def delete_log():
     """Delete the selected row."""
-    record_id = selected_id_var.get().strip()
+    record_id = selected_id_var.get().strip()  # Read selected row ID from bound StringVar.
     if not record_id:
         messagebox.showwarning("No Selection", "Select a row from the table first.")
         return
@@ -145,14 +149,14 @@ def delete_log():
     if not messagebox.askyesno("Confirm Delete", f"Delete record ID {record_id}?"):
         return
 
-    conn = None
+    conn = None  # Start with no connection; set it in try.
     try:
         conn = get_connection()
         ensure_logs_table(conn)
         cursor = conn.cursor()
-        # Safe placeholder avoids manual string concatenation.
+        # Single-value tuple needs a trailing comma: (int(record_id),)
         cursor.execute("DELETE FROM logs WHERE id = %s", (int(record_id),))
-        conn.commit()
+        conn.commit()  # Save delete permanently.
         cursor.close()
         clear_form()
         refresh_table()
@@ -166,18 +170,20 @@ def delete_log():
 
 def on_row_select(_event):
     """Copy selected row values into the form."""
-    selection = logs_table.selection()
+    selection = logs_table.selection()  # Returns selected Treeview item id(s), not row data yet.
     if not selection:
         return
-    selected_values = logs_table.item(selection[0], "values")
+    selected_values = logs_table.item(selection[0], "values")  # item(..., "values") gets displayed row tuple.
     if not selected_values:
         return
 
-    selected_id_var.set(str(selected_values[0]))
+    selected_id_var.set(str(selected_values[0]))  # Keep ID as string for Entry/StringVar compatibility.
     message_entry.delete(0, tk.END)
-    message_entry.insert(0, str(selected_values[1]))
+    message_entry.insert(0, str(selected_values[1]))  # Entry.insert(index, text): index 0 means beginning.
 
 
+# This file is intended to run directly as a desktop app.
+# If imported elsewhere, this block still runs because it is top-level UI setup.
 app = tk.Tk()
 app.title("Desktop Log Manager (Tkinter)")
 app.geometry("980x560")
