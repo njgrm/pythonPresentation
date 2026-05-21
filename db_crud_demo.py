@@ -1,23 +1,17 @@
 """
-MySQL CRUD CLI Demo
--------------------
-Simple command-line script for testing MySQL connection and CRUD functions.
+SQLite CRUD CLI Demo
+--------------------
+Simple command-line script for testing SQLite connection and CRUD functions.
 """
 
-import mysql.connector
-from mysql.connector import Error
+import sqlite3
 
 
 def get_connection():
-    """Open a database connection using local XAMPP defaults."""
-    # Similar to creating a PDO/MySQLi connection in PHP:
-    # $pdo = new PDO("mysql:host=localhost;dbname=system_db", "root", "");
-    return mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="",
-        database="system_db",
-    )
+    """Open a database connection using a local SQLite file."""
+    # SQLite stores data in a single file (like a lightweight local DB).
+    # The file will be created automatically if it does not exist.
+    return sqlite3.connect("system_db.sqlite")
 
 
 def create_table_if_missing(conn):
@@ -27,9 +21,9 @@ def create_table_if_missing(conn):
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(100) NOT NULL,
-            email VARCHAR(150) NOT NULL UNIQUE
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE
         )
         """
     )
@@ -40,8 +34,9 @@ def create_table_if_missing(conn):
 def create_user(conn, name, email):
     """Insert one user record."""
     cursor = conn.cursor()
-    # %s are SQL parameter placeholders (not Python string formatting).
-    query = "INSERT INTO users (username, email) VALUES (%s, %s)"
+    # ? are SQLite parameter placeholders (not Python string formatting).
+    # This is the CREATE in CRUD.
+    query = "INSERT INTO users (username, email) VALUES (?, ?)"
     # Values are passed separately so user input is treated as data, not SQL code.
     cursor.execute(query, (name, email))
     # commit() makes INSERT/UPDATE/DELETE changes permanent.
@@ -52,8 +47,10 @@ def create_user(conn, name, email):
 
 def read_users(conn):
     """Read and print all users."""
-    # dictionary=True lets us access columns by name (row["email"]) instead of indexes.
-    cursor = conn.cursor(dictionary=True)
+    # The row factory lets us access columns by name (row["email"]).
+    # This is the READ in CRUD.
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
     query = "SELECT * FROM users ORDER BY id ASC"
     cursor.execute(query)
     rows = cursor.fetchall()  # Collect all result rows into a Python list.
@@ -69,7 +66,8 @@ def update_email(conn, user_id, new_email):
     """Update one user email by ID."""
     cursor = conn.cursor()
     # WHERE limits update to one target row.
-    query = "UPDATE users SET email = %s WHERE id = %s"
+    # This is the UPDATE in CRUD.
+    query = "UPDATE users SET email = ? WHERE id = ?"
     cursor.execute(query, (new_email, user_id))
     conn.commit()
     if cursor.rowcount == 0:  # rowcount shows how many rows were actually changed.
@@ -83,7 +81,8 @@ def delete_user(conn, user_id):
     """Delete one user by ID."""
     cursor = conn.cursor()
     # Keep WHERE in DELETE to avoid removing every row.
-    query = "DELETE FROM users WHERE id = %s"
+    # This is the DELETE in CRUD.
+    query = "DELETE FROM users WHERE id = ?"
     cursor.execute(query, (user_id,))
     conn.commit()
     if cursor.rowcount == 0:  # rowcount == 0 usually means ID was not found.
@@ -146,7 +145,7 @@ def run_app():
     try:
         conn = get_connection()  # Create one reusable connection for this session.
         create_table_if_missing(conn)
-        print("Connected to MySQL. Table is ready.")
+        print("Connected to SQLite. Table is ready.")
 
         while True:  # Keep session running until user chooses Exit.
             print_menu()
@@ -218,11 +217,20 @@ def run_app():
 
             else:
                 print("Invalid option. Choose 1, 2, 3, 4, or 5.")
-    except Error as db_error:
+    except sqlite3.IntegrityError as db_error:
+        # Example: UNIQUE constraint failed when inserting a duplicate email.
+        print(f"Integrity error (constraint violation): {db_error}")
+        print("Check: duplicate email, missing required data, or invalid ID.")
+    except sqlite3.OperationalError as db_error:
+        # Example: wrong SQL, missing table, or locked database file.
+        print(f"Operational error (SQL/DB state): {db_error}")
+        print("Check: SQL syntax, table exists, or file permissions.")
+    except sqlite3.Error as db_error:
+        # Catch-all for any other SQLite-related errors.
         print(f"Database error: {db_error}")
-        print("Check: XAMPP MySQL is running, system_db exists, and connector is installed.")
+        print("Check: SQLite file path and database accessibility.")
     finally:
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
             print("Connection closed.")
 
